@@ -101,7 +101,3 @@ gcc -o smallsh smallsh.c
 - The shell does not support command piping (`|`).
 - No syntax validation is performed on user input.
 - Input must follow the expected format (commands separated by spaces, redirections properly spaced, etc.).
-
-## Conclusion
-
-
