@@ -57,7 +57,7 @@ void parse_input(char *input, char **args, char **input_file, char **output_file
 /*
     Function: execute_command()
     Args: char **args, char *input_file, char *output_file, int background
-    Description: Forks a child process to execute the parsed command.
+    Description: Executes commands from the arguements
 */
 void execute_command(char **args, char *input_file, char *output_file, int background) {
     pid_t pid = fork();         //fork a child process and store process ID
@@ -72,8 +72,7 @@ void execute_command(char **args, char *input_file, char *output_file, int backg
         if (input_file) {
             int file = open(input_file, O_RDONLY);
             if (file == -1) {
-                fprintf(stderr, "cannot open %s for input: ", input_file);
-                perror(""); 
+                fprintf(stderr, "cannot open %s for input\n", input_file);
                 exit(1);
             }
             dup2(file, 0);
@@ -83,7 +82,7 @@ void execute_command(char **args, char *input_file, char *output_file, int backg
         if (output_file) {
             int file = open(output_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
             if (file == -1) {
-                perror("open output file");
+                fprintf(stderr, "cannot open %s for output\n", output_file);
                 exit(1);
             }
             dup2(file, 1);
@@ -92,12 +91,13 @@ void execute_command(char **args, char *input_file, char *output_file, int backg
         // Execute the command
         if (execvp(args[0], args) == -1) {
             perror("execvp");
+            fprintf(stderr, "%s: no such file or directory", output_file);
             exit(1);
         }
     }
-    else { // Parent process
+    else { 
         if (background) {
-            printf("Background PID: %d\n", pid);
+            printf("background pid is %d\n", pid);
         }
         else {
             waitpid(pid, &status, 0);
@@ -150,7 +150,7 @@ int main() {
         }
         // status
         else if (strcmp(args[0], "status") == 0) {
-            printf("Exit status: %d\n", last_status);
+            printf("exit status: %d\n", last_status);
         }
 
         // Execute 

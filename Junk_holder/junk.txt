@@ -1,4 +1,0 @@
-README.md
-junk.txt
-smallsh
-townslel_assignment4.c
