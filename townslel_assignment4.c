@@ -133,7 +133,6 @@ void execute_command(char **args, char *input_file, char *output_file, int backg
         if (background && !foreground_only_mode) {
             printf("background pid is %d\n", pid);
             fflush(stdout);
-            fflush(stdout);
 
             // Store background PID in array
             for (int i = 0; i < MAX_BG_PROCESSES; i++) {
@@ -168,7 +167,7 @@ void handle_SIGINT(int signo) {
 
 /*
     Function: handle_SIGTSTP()
-    Description: Enter/Exit foreground-only mode and print a message.
+    Description: Set flag for foreground-only mode 
 */
 void handle_SIGTSTP(int signo) {
     sigtstp_flag = 1;
@@ -188,10 +187,8 @@ void check_background_processes() {
             if (pid > 0) {  
                 if (WIFSIGNALED(status)) {
                     printf("background pid %d is done: terminated by signal %d\n", pid, WTERMSIG(status));
-                    fflush(stdout);
                 } else if (WIFEXITED(status)) {
                     printf("background pid %d is done: exit value %d\n", pid, WEXITSTATUS(status));
-                    fflush(stdout);
                 }
                 fflush(stdout);
                 background_pids[i] = 0;  
