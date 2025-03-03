@@ -171,11 +171,15 @@ void handle_SIGINT(int signo) {
 */
 void handle_SIGTSTP(int signo) {
     if (foreground_only_mode == 0) {
+        //char *message = "\nEntering foreground-only mode (& is now ignored)\n";
+        printf("\nEntering foreground-only mode (& is now ignored)\n");
+        //write(STDOUT_FILENO, message, 50);
         foreground_only_mode = 1;
-        write(STDOUT_FILENO, "\nEntering foreground-only mode (& is now ignored)\n", 50);
     } else {
+        //char *message = "\nExiting foreground-only mode\n";
+        printf("\nEntering foreground-only mode (& is now ignored)\n");
+        //write(STDOUT_FILENO, message, 30);
         foreground_only_mode = 0;
-        write(STDOUT_FILENO, "\nExiting foreground-only mode\n", 30);
     }
 }
 
