@@ -148,9 +148,9 @@ void execute_command(char **args, char *input_file, char *output_file, int backg
                 int term_signal = WTERMSIG(status);
                 printf("Terminated by signal %d\n", term_signal);
                 fflush(stdout);
-                *last_exit_status = term_signal;
+                last_status = term_signal;
             } else if (WIFEXITED(status)) {
-                *last_exit_status = WEXITSTATUS(status);
+                last_status = WEXITSTATUS(status);
             }
         }
     }
