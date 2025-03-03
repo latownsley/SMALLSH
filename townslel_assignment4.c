@@ -7,8 +7,10 @@
 #include <fcntl.h>
 #include <signal.h>
 
-#define MAX_ARGS 512                    // max number of arguments
+#define MAX_ARGS 512                 // max number of arguments
 #define INPUT_LENGTH 2048            // max length of command input
+
+int last_status = 0;                // Store last foreground process status
 
 /*
     Fuction: parse_input()
@@ -52,34 +54,40 @@ void parse_input(char *input, char **args, char **input_file, char **output_file
 }
 
 // Function to execute command
+/*
+    Function: execute_command()
+    Args: char **args, char *input_file, char *output_file, int background
+    Description: Forks a child process to execute the parsed command.
+*/
 void execute_command(char **args, char *input_file, char *output_file, int background) {
-    pid_t pid = fork();
+    pid_t pid = fork();         //fork a child process and store process ID
     int status;
 
     if (pid == -1) {
         perror("fork");
         exit(1);
     }
-    else if (pid == 0) { // Child process
-        // Handle input redirection
+    else if (pid == 0) { 
+        // Handle Input
         if (input_file) {
-            int fd = open(input_file, O_RDONLY);
-            if (fd == -1) {
-                perror("open input file");
+            int file = open(input_file, O_RDONLY);
+            if (file == -1) {
+                fprintf(stderr, "cannot open %s for input: ", input_file);
+                perror(""); 
                 exit(1);
             }
-            dup2(fd, 0);
-            close(fd);
+            dup2(file, 0);
+            close(file);
         }
-        // Handle output redirection
+        // Handle Output
         if (output_file) {
-            int fd = open(output_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-            if (fd == -1) {
+            int file = open(output_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (file == -1) {
                 perror("open output file");
                 exit(1);
             }
-            dup2(fd, 1);
-            close(fd);
+            dup2(file, 1);
+            close(file);
         }
         // Execute the command
         if (execvp(args[0], args) == -1) {
@@ -93,39 +101,63 @@ void execute_command(char **args, char *input_file, char *output_file, int backg
         }
         else {
             waitpid(pid, &status, 0);
+            if (WIFEXITED(status)) {
+                last_status = WEXITSTATUS(status);
+            } 
+            //else if (WIFSIGNALED(status)) {
+            //    last_status = WTERMSIG(status);
+            //    printf("Terminated by signal %d\n", last_status);
+            //}
         }
     }
 }
 
 int main() {
-    char input[INPUT_LENGTH];            // holds the command line input
-    char *args[MAX_ARGS];                   // holds
+    char input[INPUT_LENGTH];               // holds the user input
+    char *args[MAX_ARGS];                   
     char *input_file, *output_file;
-    int background;
+    int background;                         // bool if the command runs in the background
 
     while (1) {
         printf(": ");
-        fflush(stdout);
+        //fflush(stdout);
         if (!fgets(input, INPUT_LENGTH, stdin)) {
             break;
         }
-        // Remove newline character
+        // remove newline
         input[strcspn(input, "\n")] = '\0';
 
-        // Ignore empty lines and comments
+        // ignore empty lines & comments
         if (input[0] == '\0' || input[0] == '#') {
             continue;
         }
 
-        // Parse input
         parse_input(input, args, &input_file, &output_file, &background);
 
-        // Handle built-in "exit" command
+        // exit
         if (strcmp(args[0], "exit") == 0) {
             exit(0);
         }
-        // Execute command
-        execute_command(args, input_file, output_file, background);
+        // cd
+        else if (strcmp(args[0], "cd") == 0){
+            if (args[1] == NULL){
+                chdir(getenv("HOME"));              // changes to the directory specified in the HOME environment variable
+            } else {
+                if (chdir(args[1]) != 0){
+                    perror("cd");
+                }
+            }
+        }
+        // status
+        else if (strcmp(args[0], "status") == 0) {
+            printf("Exit status: %d\n", last_status);
+        }
+
+        // Execute 
+        else{
+            execute_command(args, input_file, output_file, background);
+        }
+           
     }
     return EXIT_SUCCESS;
 }
