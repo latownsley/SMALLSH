@@ -7,10 +7,13 @@
 #include <fcntl.h>
 #include <signal.h>
 
-#define MAX_ARGS 512                 // max number of arguments
-#define INPUT_LENGTH 2048            // max length of command input
+#define MAX_ARGS 512                            // max number of arguments
+#define INPUT_LENGTH 2048                       // max length of command input
+#define MAX_BG_PROCESSES 100                    // Store up to 100 background PIDs
 
-int last_status = 0;                // Store last foreground process status
+pid_t background_pids[MAX_BG_PROCESSES] = {0};  // Array to track background PIDs
+int last_status = 0;                            // Store last foreground process status
+int foreground_only_mode = 0;                   // Store whether we're in foreground_only_mode
 
 /*
     Fuction: parse_input()
@@ -53,7 +56,7 @@ void parse_input(char *input, char **args, char **input_file, char **output_file
     args[arg_count] = NULL; 
 }
 
-// Function to execute command
+
 /*
     Function: execute_command()
     Args: char **args, char *input_file, char *output_file, int background
@@ -68,59 +71,168 @@ void execute_command(char **args, char *input_file, char *output_file, int backg
         exit(1);
     }
     else if (pid == 0) { 
+        // ignore SIGTSTP in foreground and background
+        struct sigaction sa_SIGTSTP_child = {0};
+        sa_SIGTSTP_child.sa_handler = SIG_IGN; // Ignore SIGTSTP
+        sigfillset(&sa_SIGTSTP_child.sa_mask);
+        sa_SIGTSTP_child.sa_flags = 0;
+        sigaction(SIGTSTP, &sa_SIGTSTP_child, NULL);
+
+        // restore SIGINT for foreground processes
+        if (!background) {
+            struct sigaction sa_SIGINT_child = {0};
+            sa_SIGINT_child.sa_handler = SIG_DFL; 
+            sigfillset(&sa_SIGINT_child.sa_mask);
+            sa_SIGINT_child.sa_flags = 0;
+            sigaction(SIGINT, &sa_SIGINT_child, NULL);
+        }
+
         // Handle Input
         if (input_file) {
             int file = open(input_file, O_RDONLY);
             if (file == -1) {
                 fprintf(stderr, "cannot open %s for input\n", input_file);
+                fflush(stdout);
                 exit(1);
             }
             dup2(file, 0);
             close(file);
+        } else if (background) {  
+            // Redirect background input to /dev/null
+            int devnull = open("/dev/null", O_RDONLY);
+            dup2(devnull, STDIN_FILENO);
+            close(devnull);
         }
+
         // Handle Output
         if (output_file) {
             int file = open(output_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
             if (file == -1) {
                 fprintf(stderr, "cannot open %s for output\n", output_file);
+                fflush(stdout);
                 exit(1);
             }
             dup2(file, 1);
             close(file);
+        } else if (background) {  
+            // Redirect background output to /dev/null
+            int devnull = open("/dev/null", O_WRONLY);
+            dup2(devnull, STDOUT_FILENO);
+            close(devnull);
         }
+
         // Execute the command
         if (execvp(args[0], args) == -1) {
-            perror("execvp");
             fprintf(stderr, "%s: no such file or directory", output_file);
+            fflush(stdout);
             exit(1);
         }
     }
     else { 
-        if (background) {
+        if (background && !foreground_only_mode) {
             printf("background pid is %d\n", pid);
+            fflush(stdout);
+            fflush(stdout);
+
+            // Store background PID in array
+            for (int i = 0; i < MAX_BG_PROCESSES; i++) {
+                if (background_pids[i] == 0) {
+                    background_pids[i] = pid;
+                    break;
+                }
+            }
         }
         else {
             waitpid(pid, &status, 0);
             if (WIFEXITED(status)) {
-                last_status = WEXITSTATUS(status);
-            } 
-            //else if (WIFSIGNALED(status)) {
-            //    last_status = WTERMSIG(status);
-            //    printf("Terminated by signal %d\n", last_status);
-            //}
+                int term_signal = WTERMSIG(status);
+                printf("Terminated by signal %d\n", term_signal);
+                fflush(stdout);
+                *last_exit_status = term_signal;
+            } else if (WIFEXITED(status)) {
+                *last_exit_status = WEXITSTATUS(status);
+            }
         }
     }
 }
 
+/*
+    Function: handle_SIGINT()
+    Description: Do nothing when SIGINT is called
+*/
+void handle_SIGINT(int signo) {
+    // Do nothing! Yay!
+}
+
+/*
+    Function: handle_SIGTSTP()
+    Description: Enter/Exit foreground-only mode and print a message.
+*/
+void handle_SIGTSTP(int signo) {
+    if (foreground_only_mode == 0) {
+        foreground_only_mode = 1;
+        write(STDOUT_FILENO, "\nEntering foreground-only mode (& is now ignored)\n", 50);
+    } else {
+        foreground_only_mode = 0;
+        write(STDOUT_FILENO, "\nExiting foreground-only mode\n", 30);
+    }
+}
+
+/*
+    Function: check_background_processes()
+    Description: Check background processes and print when status is completed
+*/
+void check_background_processes() {
+    int status;
+    pid_t pid;
+
+    for (int i = 0; i < MAX_BG_PROCESSES; i++) {
+        if (background_pids[i] != 0) {
+            pid = waitpid(background_pids[i], &status, WNOHANG);
+            if (pid > 0) {  
+                if (WIFSIGNALED(status)) {
+                    printf("background pid %d is done: terminated by signal %d\n", pid, WTERMSIG(status));
+                    fflush(stdout);
+                } else if (WIFEXITED(status)) {
+                    printf("background pid %d is done: exit value %d\n", pid, WEXITSTATUS(status));
+                    fflush(stdout);
+                }
+                fflush(stdout);
+                background_pids[i] = 0;  
+            }
+        }
+    }
+}
+
+/*
+    Function: main()
+*/
 int main() {
+    // handle SIGINT
+    struct sigaction sa_SIGINT = {0};
+    sa_SIGINT.sa_handler = handle_SIGINT; 
+    sigfillset(&sa_SIGINT.sa_mask);
+    sa_SIGINT.sa_flags = 0;
+    sigaction(SIGINT, &sa_SIGINT, NULL);
+
+    // handle SIGTSTP
+    struct sigaction sa_SIGTSTP = {0};
+    sa_SIGTSTP.sa_handler = handle_SIGTSTP;
+    sigfillset(&sa_SIGTSTP.sa_mask);
+    sa_SIGTSTP.sa_flags = 0;
+    sigaction(SIGTSTP, &sa_SIGTSTP, NULL);
+
+    // variables
     char input[INPUT_LENGTH];               // holds the user input
     char *args[MAX_ARGS];                   
     char *input_file, *output_file;
     int background;                         // bool if the command runs in the background
 
     while (1) {
+        check_background_processes();  
+
         printf(": ");
-        //fflush(stdout);
+        fflush(stdout);
         if (!fgets(input, INPUT_LENGTH, stdin)) {
             break;
         }
