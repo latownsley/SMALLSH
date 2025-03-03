@@ -14,6 +14,7 @@
 pid_t background_pids[MAX_BG_PROCESSES] = {0};  // Array to track background PIDs
 int last_status = 0;                            // Store last foreground process status
 int foreground_only_mode = 0;                   // Store whether we're in foreground_only_mode
+volatile sig_atomic_t sigtstp_flag = 0;         // flag to track if SIGTSTP was received
 
 /*
     Fuction: parse_input()
@@ -170,17 +171,7 @@ void handle_SIGINT(int signo) {
     Description: Enter/Exit foreground-only mode and print a message.
 */
 void handle_SIGTSTP(int signo) {
-    if (foreground_only_mode == 0) {
-        //char *message = "\nEntering foreground-only mode (& is now ignored)\n";
-        printf("\nEntering foreground-only mode (& is now ignored)\n");
-        //write(STDOUT_FILENO, message, 50);
-        foreground_only_mode = 1;
-    } else {
-        //char *message = "\nExiting foreground-only mode\n";
-        printf("\nEntering foreground-only mode (& is now ignored)\n");
-        //write(STDOUT_FILENO, message, 30);
-        foreground_only_mode = 0;
-    }
+    sigtstp_flag = 1;
 }
 
 /*
@@ -224,7 +215,7 @@ int main() {
     struct sigaction sa_SIGTSTP = {0};
     sa_SIGTSTP.sa_handler = handle_SIGTSTP;
     sigfillset(&sa_SIGTSTP.sa_mask);
-    sa_SIGTSTP.sa_flags = 0;
+    sa_SIGTSTP.sa_flags = SA_RESTART;
     sigaction(SIGTSTP, &sa_SIGTSTP, NULL);
 
     // variables
@@ -236,11 +227,25 @@ int main() {
     while (1) {
         check_background_processes();  
 
+        // Check if SIGTSTP was received
+        if (sigtstp_flag) {
+            if (foreground_only_mode == 0) {
+                write(STDOUT_FILENO, "\nEntering foreground-only mode (& is now ignored)\n", 50);
+                foreground_only_mode = 1;
+            } else {
+                write(STDOUT_FILENO, "\nExiting foreground-only mode\n", 30);
+                foreground_only_mode = 0;
+            }
+            sigtstp_flag = 0; // Reset flag
+        }
+        
+        // text input 
         printf(": ");
         fflush(stdout);
         if (!fgets(input, INPUT_LENGTH, stdin)) {
             break;
         }
+        
         // remove newline
         input[strcspn(input, "\n")] = '\0';
 
