@@ -123,7 +123,7 @@ void execute_command(char **args, char *input_file, char *output_file, int backg
 
         // Execute the command
         if (execvp(args[0], args) == -1) {
-            fprintf(stderr, "%s: no such file or directory", output_file);
+            fprintf(stderr, "%s: no such file or directory\n", args[0]);
             fflush(stdout);
             exit(1);
         }
@@ -144,9 +144,10 @@ void execute_command(char **args, char *input_file, char *output_file, int backg
         }
         else {
             waitpid(pid, &status, 0);
-            if (WIFEXITED(status)) {
+
+            if (WIFSIGNALED(status)) {
                 int term_signal = WTERMSIG(status);
-                printf("Terminated by signal %d\n", term_signal);
+                printf("terminated by signal %d\n", term_signal);
                 fflush(stdout);
                 last_status = term_signal;
             } else if (WIFEXITED(status)) {
